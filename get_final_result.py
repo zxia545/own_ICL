@@ -1,136 +1,116 @@
-import pandas as pd
 import argparse
 import os
+import json
+import pandas as pd
+from collections import defaultdict
 
-# ------------------------------------------------------
-# 配置字段分类
-# ------------------------------------------------------
+# --------------- Mapping配置 -----------------
+# 每一类对应哪些子任务
+CATEGORY_TASKS = {
+    "Unstructured Text": ["natural_language_string"],
+    "Structured Text": ["dict_search_string", "dict_search_number"],
+    "Format Rules": ["check_format", "output_format", "format_convert"],
+    "Order Rules": ["check_order", "character_order", "sentence_order", "word_order"],
+    "Duplication Check": ["check_dedup"],
+    "De-Duplication": ["character_dedup", "sentence_dedup", "word_dedup"],
+    "Navigation": ["navigation_and_count"],
+    "Relation Analysis": ["relation_analysis"],
+    "List Mapping": ["list_number"],
+}
 
-unstructured_fields = [
-    'natural_language_string_natural_language_hash_string_copying'
-]
+# --------------- Order Rules权重 ----------------
+# 特别注意加权：character_order和word_order是90%，sentence_order是60%
+ORDER_RULES_WEIGHT = {
+    "character_order": 0.9,
+    "sentence_order": 0.6,
+    "word_order": 0.9,
+    "check_order": 1.0,
+}
 
-structured_fields = [
-    'dict_search_number_dict_search_number-all_similar',
-    'dict_search_number_dict_search_number-half_similar',
-    'dict_search_number_dict_search_number-non_similar',
-    'dict_search_string_dict_search_hash_string',
-    'list_number_list_number_list_number'
-]
+# --------------- 脚本主逻辑 -----------------
+def process_logs(input_folder):
+    # 保存每个模型每个任务的正确率
+    model_task_correct = defaultdict(lambda: defaultdict(list))
 
-format_fields = [
-    'check_format_format_convert_normal',
-    'check_format_format_convert_transfer',
-    'output_format_output_format_output_format_01',
-    'output_format_output_format_output_format_02',
-    'output_format_output_format_output_format_03',
-    'format_convert_format_convert_mix',
-    'format_convert_format_convert_multi',
-    'format_convert_format_convert_single',
-    'format_convert_format_convert_transfer'
-]
+    # 遍历每一个任务文件夹
+    for task_name in os.listdir(input_folder):
+        task_folder = os.path.join(input_folder, task_name)
+        if not os.path.isdir(task_folder):
+            continue
+        
+        for file_name in os.listdir(task_folder):
+            if not file_name.endswith(".jsonl"):
+                continue
+            model_name = file_name.replace(".jsonl", "")
 
-order_fields = [
-    'character_order_keep_order_character',
-    'character_order_reversed_order_character',
-    'character_order_specify_order_character',
-    'sentence_order_keep_order_sentence',
-    'sentence_order_reversed_order_sentence',
-    'word_order_keep_order_word',
-    'word_order_reversed_order_word',
-    'word_order_specify_order_word',
-    'check_order_check_order_character',
-    'check_order_check_order_word'
-]
+            file_path = os.path.join(task_folder, file_name)
+            with open(file_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+                total = len(lines)
+                correct = 0
+                for line in lines:
+                    data = json.loads(line)
+                    if data.get("is_right") is True:
+                        correct += 1
+                if total > 0:
+                    acc = correct / total
+                    model_task_correct[model_name][task_name].append(acc)
 
-statistics_fields = [
-    'relation_analysis_generate_statistic_relation'
-]
-
-list_mapping_fields = [
-    'navigation_and_count_count_or_navigation_count-easy',
-    'navigation_and_count_count_or_navigation_count-middle',
-    'navigation_and_count_count_or_navigation_navigation-easy',
-    'navigation_and_count_count_or_navigation_navigation-middle'
-]
-
-# ------------------------------------------------------
-# 主逻辑
-# ------------------------------------------------------
-
-def process_model_scores(csv_path, output_path=None):
-    # 读取CSV
-    df = pd.read_csv(csv_path)
+    # 汇总每个模型的每个大类得分
     results = []
+    for model_name, task_scores in model_task_correct.items():
+        record = {"Model": model_name}
+        scores = []
+        for category, tasks in CATEGORY_TASKS.items():
+            if category == "Order Rules":
+                # 特殊处理Order Rules加权
+                weighted_sum = 0
+                total_weight = 0
+                for t in tasks:
+                    weight = ORDER_RULES_WEIGHT.get(t, 1.0)
+                    t_scores = task_scores.get(t, [])
+                    if t_scores:
+                        weighted_sum += sum(t_scores) * weight
+                        total_weight += weight
+                if total_weight > 0:
+                    category_score = weighted_sum / total_weight
+                else:
+                    category_score = None
+            else:
+                # 其他类别直接平均
+                category_scores = []
+                for t in tasks:
+                    category_scores.extend(task_scores.get(t, []))
+                category_score = sum(category_scores) / len(category_scores) if category_scores else None
 
-    # 遍历每一行（每个模型）
-    for idx, row in df.iterrows():
-        model_name = row['model_name']
-
-        # 计算每一组的得分（取所有子任务的平均）
-        def safe_average(fields):
-            values = [row[field] for field in fields if field in row and pd.notna(row[field])]
-            return sum(values) / len(values) if values else None
-
-        unstructured = safe_average(unstructured_fields)
-        structured = safe_average(structured_fields)
-        format_score = safe_average(format_fields)
-        order = safe_average(order_fields)
-        statistics = safe_average(statistics_fields)
-        list_mapping = safe_average(list_mapping_fields)
-
-        # 计算最终Average（六项的平均）
-        metric_components = [x for x in [unstructured, structured, format_score, order, statistics, list_mapping] if x is not None]
-        if metric_components:
-            overall_avg = sum(metric_components) / len(metric_components)
+            record[category] = round(category_score, 4) if category_score is not None else None
+            if category_score is not None:
+                scores.append(category_score)
+        
+        # 最后再加一列：整体Average
+        if scores:
+            record["Average"] = round(sum(scores) / len(scores), 4)
         else:
-            overall_avg = None
+            record["Average"] = None
 
-        results.append([
-            model_name,
-            unstructured,
-            structured,
-            format_score,
-            order,
-            statistics,
-            list_mapping,
-            overall_avg
-        ])
+        results.append(record)
 
-    # 整理成DataFrame
-    columns = [
-        'Model',
-        'Unstructured Text',
-        'Structured Text',
-        'Format',
-        'Order',
-        'Statistics',
-        'List Mapping',
-        'Average'
-    ]
-    result_df = pd.DataFrame(results, columns=columns)
-    print(result_df)
+    df = pd.DataFrame(results)
+    return df
 
-    # 保存为Excel
-    if output_path:
-        result_df.to_excel(output_path, index=False)
-        print(f"Saved results to {output_path}")
-
-    return result_df
-
-# ------------------------------------------------------
-# argparse 命令行接口
-# ------------------------------------------------------
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Process model evaluation results.")
-    parser.add_argument('--input', type=str, required=True, help='Path to input CSV file')
+# --------------- 主函数 -----------------
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--input_folder", type=str, required=True, help="Path to logs folder")
     args = parser.parse_args()
 
-    input_csv = args.input
+    input_folder = args.input_folder
+    output_path = input_folder.rstrip("/").rstrip("\\") + "_final.xlsx"
 
-    # 自动生成输出文件名：加 _final.xlsx
-    base_name = os.path.splitext(input_csv)[0]
-    output_excel = f"{base_name}_final.xlsx"
+    df = process_logs(input_folder)
+    df = df[["Model", "Unstructured Text", "Structured Text", "Format Rules", "Order Rules", "Duplication Check", "De-Duplication", "Navigation", "Relation Analysis", "List Mapping", "Average"]]
+    df.to_excel(output_path, index=False)
+    print(f"✅ Successfully saved final results to: {output_path}")
 
-    process_model_scores(input_csv, output_excel)
+if __name__ == "__main__":
+    main()
