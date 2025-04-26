@@ -79,16 +79,10 @@ def process_model_scores(csv_path, output_path=None):
         statistics = safe_average(statistics_fields)
         list_mapping = safe_average(list_mapping_fields)
 
-        # 计算 Exact Copying 和 Rule Learning
-        exact_copying_components = [x for x in [unstructured, structured] if x is not None]
-        rule_learning_components = [x for x in [format_score, order, statistics, list_mapping] if x is not None]
-
-        exact_copying = sum(exact_copying_components) / len(exact_copying_components) if exact_copying_components else None
-        rule_learning = sum(rule_learning_components) / len(rule_learning_components) if rule_learning_components else None
-
-        # 最后计算 Average
-        if exact_copying is not None and rule_learning is not None:
-            overall_avg = (exact_copying + rule_learning) / 2
+        # 计算最终Average（六项的平均）
+        metric_components = [x for x in [unstructured, structured, format_score, order, statistics, list_mapping] if x is not None]
+        if metric_components:
+            overall_avg = sum(metric_components) / len(metric_components)
         else:
             overall_avg = None
 
@@ -103,21 +97,21 @@ def process_model_scores(csv_path, output_path=None):
             overall_avg
         ])
 
-    # 整理成DataFrame，并加二级表头
-    columns = pd.MultiIndex.from_tuples([
-        ('Model', ''),
-        ('Exact Copying', 'Unstructured Text'),
-        ('Exact Copying', 'Structured Text'),
-        ('Rule Learning', 'Format'),
-        ('Rule Learning', 'Order'),
-        ('Rule Learning', 'Statistics'),
-        ('Rule Learning', 'List Mapping'),
-        ('Average', '')
-    ])
+    # 整理成DataFrame
+    columns = [
+        'Model',
+        'Unstructured Text',
+        'Structured Text',
+        'Format',
+        'Order',
+        'Statistics',
+        'List Mapping',
+        'Average'
+    ]
     result_df = pd.DataFrame(results, columns=columns)
     print(result_df)
 
-    # 保存
+    # 保存为Excel
     if output_path:
         result_df.to_excel(output_path, index=False)
         print(f"Saved results to {output_path}")
