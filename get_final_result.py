@@ -1,116 +1,123 @@
-import argparse
 import os
 import json
 import pandas as pd
+import argparse
 from collections import defaultdict
 
-# --------------- Mapping配置 -----------------
-# 每一类对应哪些子任务
+# 各类别对应的任务
 CATEGORY_TASKS = {
     "Unstructured Text": ["natural_language_string"],
     "Structured Text": ["dict_search_string", "dict_search_number"],
-    "Format Rules": ["check_format", "output_format", "format_convert"],
-    "Order Rules": ["check_order", "character_order", "sentence_order", "word_order"],
-    "Duplication Check": ["check_dedup"],
-    "De-Duplication": ["character_dedup", "sentence_dedup", "word_dedup"],
-    "Navigation": ["navigation_and_count"],
-    "Relation Analysis": ["relation_analysis"],
+    "Format": ["check_format", "output_format", "format_convert"],
+    "Order": ["check_order", "character_order", "sentence_order", "word_order"],
+    "Statistics": ["check_dedup", "character_dedup", "sentence_dedup", "word_dedup", "navigation_and_count", "relation_analysis"],
     "List Mapping": ["list_number"],
 }
 
-# --------------- Order Rules权重 ----------------
-# 特别注意加权：character_order和word_order是90%，sentence_order是60%
-ORDER_RULES_WEIGHT = {
+# 权重配置（目前只有 Order 里面有权重要求）
+ORDER_WEIGHTS = {
     "character_order": 0.9,
     "sentence_order": 0.6,
     "word_order": 0.9,
     "check_order": 1.0,
 }
 
-# --------------- 脚本主逻辑 -----------------
-def process_logs(input_folder):
-    # 保存每个模型每个任务的正确率
-    model_task_correct = defaultdict(lambda: defaultdict(list))
+def read_jsonl(file_path):
+    """读取单个jsonl文件"""
+    results = []
+    with open(file_path, "r", encoding="utf-8") as f:
+        for line in f:
+            data = json.loads(line)
+            results.append(data)
+    return results
 
-    # 遍历每一个任务文件夹
-    for task_name in os.listdir(input_folder):
-        task_folder = os.path.join(input_folder, task_name)
-        if not os.path.isdir(task_folder):
+def compute_accuracy(jsonl_file):
+    """计算单个jsonl文件准确率"""
+    results = read_jsonl(jsonl_file)
+    if len(results) == 0:
+        return 0.0
+    correct = sum(1 for item in results if item.get("is_right", False))
+    return correct / len(results)
+
+def aggregate_scores(input_folder):
+    """收集每个模型的各类别得分"""
+    model_scores = defaultdict(lambda: defaultdict(list))
+
+    for task_folder in os.listdir(input_folder):
+        task_folder_path = os.path.join(input_folder, task_folder)
+        if not os.path.isdir(task_folder_path):
             continue
-        
-        for file_name in os.listdir(task_folder):
+
+        for file_name in os.listdir(task_folder_path):
             if not file_name.endswith(".jsonl"):
                 continue
             model_name = file_name.replace(".jsonl", "")
+            file_path = os.path.join(task_folder_path, file_name)
+            acc = compute_accuracy(file_path)
 
-            file_path = os.path.join(task_folder, file_name)
-            with open(file_path, "r", encoding="utf-8") as f:
-                lines = f.readlines()
-                total = len(lines)
-                correct = 0
-                for line in lines:
-                    data = json.loads(line)
-                    if data.get("is_right") is True:
-                        correct += 1
-                if total > 0:
-                    acc = correct / total
-                    model_task_correct[model_name][task_name].append(acc)
+            # 判断属于哪个大类
+            matched = False
+            for category, tasks in CATEGORY_TASKS.items():
+                if task_folder in tasks:
+                    if category == "Order":
+                        if task_folder in ORDER_WEIGHTS:
+                            acc *= ORDER_WEIGHTS[task_folder]
+                    model_scores[model_name][category].append(acc)
+                    matched = True
+                    break
+            if not matched:
+                print(f"[Warning] Task {task_folder} 未匹配到任何大类，跳过。")
 
-    # 汇总每个模型的每个大类得分
-    results = []
-    for model_name, task_scores in model_task_correct.items():
-        record = {"Model": model_name}
-        scores = []
-        for category, tasks in CATEGORY_TASKS.items():
-            if category == "Order Rules":
-                # 特殊处理Order Rules加权
-                weighted_sum = 0
-                total_weight = 0
-                for t in tasks:
-                    weight = ORDER_RULES_WEIGHT.get(t, 1.0)
-                    t_scores = task_scores.get(t, [])
-                    if t_scores:
-                        weighted_sum += sum(t_scores) * weight
-                        total_weight += weight
-                if total_weight > 0:
-                    category_score = weighted_sum / total_weight
+    return model_scores
+
+def compute_final_scores(model_scores):
+    """整理成最终输出的表格"""
+    rows = []
+    for model_name, category_scores in model_scores.items():
+        row = {"Model": model_name}
+        final_avg_list = []
+
+        for cat in ["Unstructured Text", "Structured Text", "Format", "Order", "Statistics", "List Mapping"]:
+            if cat in category_scores:
+                if cat == "Order":
+                    total_weight = sum(ORDER_WEIGHTS.get(task, 1.0) for task in CATEGORY_TASKS["Order"] if task in [t.split("/")[-1] for t in category_scores.keys()])
+                    score = sum(category_scores[cat]) / 3  # 90+60+90=240，normalize to 3 tasks
                 else:
-                    category_score = None
+                    score = sum(category_scores[cat]) / len(category_scores[cat])
+                row[cat] = round(score, 3)
+                final_avg_list.append(score)
             else:
-                # 其他类别直接平均
-                category_scores = []
-                for t in tasks:
-                    category_scores.extend(task_scores.get(t, []))
-                category_score = sum(category_scores) / len(category_scores) if category_scores else None
+                row[cat] = ""
 
-            record[category] = round(category_score, 4) if category_score is not None else None
-            if category_score is not None:
-                scores.append(category_score)
-        
-        # 最后再加一列：整体Average
-        if scores:
-            record["Average"] = round(sum(scores) / len(scores), 4)
+        if final_avg_list:
+            row["Average"] = round(sum(final_avg_list) / len(final_avg_list), 3)
         else:
-            record["Average"] = None
+            row["Average"] = ""
 
-        results.append(record)
+        rows.append(row)
 
-    df = pd.DataFrame(results)
+    # 排序：Model 按字母升序
+    rows = sorted(rows, key=lambda x: x["Model"].lower())
+
+    df = pd.DataFrame(rows)
+
+    # 控制列顺序
+    df = df[["Model", "Unstructured Text", "Structured Text", "Format", "Order", "Statistics", "List Mapping", "Average"]]
     return df
 
-# --------------- 主函数 -----------------
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input_folder", type=str, required=True, help="Path to logs folder")
+    parser.add_argument('--input', type=str, required=True, help='Path to the log folder')
     args = parser.parse_args()
 
-    input_folder = args.input_folder
-    output_path = input_folder.rstrip("/").rstrip("\\") + "_final.xlsx"
+    input_folder = args.input
+    output_file = input_folder.rstrip("/").rstrip("\\") + "_final.xlsx"
 
-    df = process_logs(input_folder)
-    df = df[["Model", "Unstructured Text", "Structured Text", "Format Rules", "Order Rules", "Duplication Check", "De-Duplication", "Navigation", "Relation Analysis", "List Mapping", "Average"]]
-    df.to_excel(output_path, index=False)
-    print(f"✅ Successfully saved final results to: {output_path}")
+    model_scores = aggregate_scores(input_folder)
+    final_df = compute_final_scores(model_scores)
+
+    final_df.to_excel(output_file, index=False)
+    print(f"[INFO] 成功保存到 {output_file}")
 
 if __name__ == "__main__":
     main()
