@@ -16,10 +16,10 @@ CATEGORY_TASKS = {
 
 # 权重配置（目前只有 Order 里面有权重要求）
 ORDER_WEIGHTS = {
-    "character_order": 0.9,
-    "sentence_order": 0.6,
-    "word_order": 0.9,
-    "check_order": 1.0,
+    "character_order": 1,
+    "sentence_order": 1,
+    "word_order": 1,
+    "check_order": 1,
 }
 
 def read_jsonl(file_path):
