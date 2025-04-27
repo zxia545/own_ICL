@@ -14,13 +14,6 @@ CATEGORY_TASKS = {
     "List Mapping": ["list_number"],
 }
 
-# 权重配置（目前只有 Order 里面有权重要求）
-ORDER_WEIGHTS = {
-    "character_order": 1,
-    "sentence_order": 1,
-    "word_order": 1,
-    "check_order": 1,
-}
 
 def read_jsonl(file_path):
     """读取单个jsonl文件"""
@@ -59,9 +52,6 @@ def aggregate_scores(input_folder):
             matched = False
             for category, tasks in CATEGORY_TASKS.items():
                 if task_folder in tasks:
-                    if category == "Order":
-                        if task_folder in ORDER_WEIGHTS:
-                            acc *= ORDER_WEIGHTS[task_folder]
                     model_scores[model_name][category].append(acc)
                     matched = True
                     break
@@ -79,11 +69,7 @@ def compute_final_scores(model_scores):
 
         for cat in ["Unstructured Text", "Structured Text", "Format", "Order", "Statistics", "List Mapping"]:
             if cat in category_scores:
-                if cat == "Order":
-                    total_weight = sum(ORDER_WEIGHTS.get(task, 1.0) for task in CATEGORY_TASKS["Order"] if task in [t.split("/")[-1] for t in category_scores.keys()])
-                    score = sum(category_scores[cat]) / 3  # 90+60+90=240，normalize to 3 tasks
-                else:
-                    score = sum(category_scores[cat]) / len(category_scores[cat])
+                score = sum(category_scores[cat]) / len(category_scores[cat])
                 row[cat] = round(score, 3)
                 final_avg_list.append(score)
             else:
