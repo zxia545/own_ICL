@@ -122,7 +122,7 @@ def load_model_and_tokenizer(model_path, model_name):
         elif "phi" in model_name.lower():
             print(f"Loading Phi model using AutoModelForCausalLM, using dtype {dtype} and device {device}...")
             model = AutoModelForCausalLM.from_pretrained(**model_load_args)
-            model.eval().to(dtype=dtype, devicse=device)
+            model.eval().to(dtype=dtype, device=device)
 
         elif "chatglm" in model_name.lower():
              # ChatGLM often uses AutoModel, not AutoModelForCausalLM
