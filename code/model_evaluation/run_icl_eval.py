@@ -120,16 +120,9 @@ def load_model_and_tokenizer(model_path, model_name):
             model.eval() # Set to evaluation mode
 
         elif "phi" in model_name.lower():
-            if "phi-4" in model_name.lower():
-                print(f"Loading Phi-4 model using AutoModelForCausalLM, using dtype {dtype} and device {device}...")
-                model = AutoModelForCausalLM.from_pretrained(**model_load_args)
-                model.eval().to(dtype=dtype, device=device)
-            else:
-                if MixFormerSequentialForCausalLM is None:
-                    raise ImportError("MixFormerSequentialForCausalLM not loaded. Cannot load older 'phi' model.")
-                print(f"Loading MixFormerSequentialForCausalLM (Phi) model, using dtype {dtype} and device {device}...")
-                model = MixFormerSequentialForCausalLM.from_pretrained(**model_load_args)
-                model.eval().to(dtype=dtype, device=device)
+            print(f"Loading Phi model using AutoModelForCausalLM, using dtype {dtype} and device {device}...")
+            model = AutoModelForCausalLM.from_pretrained(**model_load_args)
+            model.eval().to(dtype=dtype, devicse=device)
 
         elif "chatglm" in model_name.lower():
              # ChatGLM often uses AutoModel, not AutoModelForCausalLM
