@@ -119,14 +119,14 @@ def load_model_and_tokenizer(model_path, model_name):
             # model.tie_weights() # Generally not needed unless manually constructing parts
             model.eval() # Set to evaluation mode
 
-        elif "phi" in model_name.lower():
-            print(f"Loading Phi model using AutoModelForCausalLM, using dtype {dtype} and device_map='auto'...")
-            model = AutoModelForCausalLM.from_pretrained(
-                **model_load_args,
-                device_map="auto",
-                torch_dtype=dtype
-            )
-            model.eval()
+        # elif "phi" in model_name.lower():
+        #     print(f"Loading Phi model using AutoModelForCausalLM, using dtype {dtype} and device_map='auto'...")
+        #     model = AutoModelForCausalLM.from_pretrained(
+        #         **model_load_args,
+        #         device_map="auto",
+        #         torch_dtype=dtype
+        #     )
+        #     model.eval()
 
         elif "chatglm" in model_name.lower():
              # ChatGLM often uses AutoModel, not AutoModelForCausalLM
