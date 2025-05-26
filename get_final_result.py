@@ -44,7 +44,12 @@ def aggregate_scores(input_folder):
         for file_name in os.listdir(task_folder_path):
             if not file_name.endswith(".jsonl"):
                 continue
-            model_name = file_name.replace(".jsonl", "")
+            # model_name = file_name.replace(".jsonl", "")
+            model_name = file_name.replace(".jsonl", "").strip()
+            if not model_name:
+                print(f"[Warning] 文件 {file_name} 未提取出合法的模型名，已跳过。")
+                continue
+
             file_path = os.path.join(task_folder_path, file_name)
             acc = compute_accuracy(file_path)
 

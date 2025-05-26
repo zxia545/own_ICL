@@ -119,7 +119,7 @@ class CountNavigationAnalysis_16shot(Base):
 class CheckFormat(Base):
     def __init__(self) -> None:
         super().__init__("../../data/tasks_data/classifier_format.json")
-        self.max_gen_len = 5
+        self.max_gen_len = 50
         self.split_token="\n"
 
 class CheckFormat_12example(Base):

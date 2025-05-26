@@ -98,7 +98,7 @@ def load_model_and_tokenizer(model_path, model_name):
     dtype = torch.float16 # Default dtype
 
     try:
-        if "72b" in model_name.lower() or "65b" in model_name.lower() or "70b" in model_name.lower() or "8x7b" in model_name.lower(): # Added 8x7B here
+        if "72b" in model_name.lower() or "65b" in model_name.lower() or "70b" in model_name.lower() or "8x7b" in model_name.lower() or "phi-3" in model_name.lower(): # Added 8x7B here
             from accelerate import init_empty_weights, load_checkpoint_and_dispatch
             print("Using accelerate for large model loading (device_map='auto')...")
             # Large models often require device_map="auto" and potentially quantization
@@ -112,7 +112,7 @@ def load_model_and_tokenizer(model_path, model_name):
             model = AutoModelForCausalLM.from_pretrained(
                 **model_load_args,
                 device_map="auto",
-                torch_dtype=dtype # Specify dtype for accelerate
+                torch_dtype=dtype
                 # Add other accelerate args like load_in_8bit=True, load_in_4bit=True if needed
             )
             # Tying weights is usually done internally by from_pretrained if applicable
@@ -265,7 +265,7 @@ def greedy_until(requests, model, tokenizer, config, disable_tqdm=False, model_m
             # "temperature": 0.7,
             # "top_p": 0.9,
             # "top_k": 50,
-             "use_cache": True, # Generally beneficial for speed
+             "use_cache": False, # Generally beneficial for speed
              "attention_mask": attention_mask.to(model.device) # Pass attention mask
         }
 
